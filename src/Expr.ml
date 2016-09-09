@@ -126,8 +126,38 @@ let x86compile code =
          | S_LD x ->
             let s = allocate stack in
             ([X86Mov (M x, s)], s::stack)
+         | S_ST x ->
+            let s::stack' = stack in
+            ([X86Mov (s, M x)], stack')
+         | S_PUSH n ->
+            let s = allocate stack in
+            ([X86Mov (L n, s)], s::stack)
+         | S_ADD ->
+            let x::y::stack'= stack in
+            ([X86Add (x, y)], y::stack')
+         | S_MUL ->
+            let x::y::stack'= stack in
+            ([X86Mul (x, y)], y::stack')
        in
        x86code @ x86compile' stack' code'
   in
   x86compile' [] code
+
+let x86print instr =
+  let opnd op =
+    match op with
+    | R i -> x86regs.(i)
+    | S i -> Printf.sprintf "-%d(%%ebp)" (i * word_size)
+    | M x -> x
+    | L i -> Printf.sprintf "$%d" i
+  in
+  match instr with
+  | X86Add (x, y) -> Printf.sprintf "addl\t%s,\t%s" (opnd x) (opnd y)
+  | X86Mul (x, y) -> Printf.sprintf "imull\t%s,\t%s" (opnd x) (opnd y)
+  | X86Mov (x, y) -> Printf.sprintf "movl\t%s,\t%s" (opnd x) (opnd y)                                    
+  | X86Push x -> Printf.sprintf "pushl\t%s" (opnd x)
+  | X86Pop  x -> Printf.sprintf "popl\t%s"  (opnd x)
+  | X86Call f -> Printf.sprintf "call\t%s" f
+  | X86Ret    -> "ret"
+                                     
                                

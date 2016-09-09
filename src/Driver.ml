@@ -58,4 +58,8 @@ let p =
 let _ =
   let [r] = run [4; 5] p in
   Printf.printf "%d\n" r
-          
+
+let _ =
+  List.iter
+    (fun i -> Printf.printf "\t%s\n" (x86print i))
+    (x86compile (compile_stmt p))
