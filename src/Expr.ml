@@ -90,3 +90,44 @@ let rec compile_stmt stmt =
   | Assign (x, e) -> compile_expr e @ [S_ST x]
   | Seq    (l, r) -> compile_stmt l @ compile_stmt r
                                                        
+let x86regs = [|"%eax"; "%ebx"; "%ecx"; "%edx"; "%esi"; "%edi"|]
+let num_of_regs = Array.length x86regs
+let word_size = 4
+
+type opnd = R of int | S of int | M of string | L of int
+
+let allocate stack =
+  match stack with
+  | []                                -> R 0
+  | (S n)::_                          -> S (n+1)
+  | (R n)::_ when n < num_of_regs - 1 -> R (n+1)
+  | _                                 -> S 0
+
+type x86instr =
+  | X86Add  of opnd * opnd
+  | X86Mul  of opnd * opnd
+  | X86Mov  of opnd * opnd
+  | X86Push of opnd
+  | X86Pop  of opnd
+  | X86Call of string
+  | X86Ret
+
+let x86compile code =
+  let rec x86compile' stack code =
+    match code with
+    | [] -> []
+    | i::code' ->
+       let (x86code, stack') =
+         match i with
+         | S_READ ->
+            ([X86Call "read"], [R 0])
+         | S_WRITE ->
+            ([X86Push (R 0); X86Call "write"; X86Pop (R 0)], [])
+         | S_LD x ->
+            let s = allocate stack in
+            ([X86Mov (M x, s)], s::stack)
+       in
+       x86code @ x86compile' stack' code'
+  in
+  x86compile' [] code
+                               
