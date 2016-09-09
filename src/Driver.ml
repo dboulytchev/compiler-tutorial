@@ -22,3 +22,10 @@ let p =
 let _ =
   let [r] = run [4; 5] p in
   Printf.printf "%d\n" r
+
+let run input p = srun input (compile_stmt p)
+
+let _ =
+  let [r] = run [4; 5] p in
+  Printf.printf "%d\n" r
+
