@@ -96,12 +96,12 @@ let word_size = 4
 
 type opnd = R of int | S of int | M of string | L of int
 
-let allocate stack =
+let allocate env stack =
   match stack with
   | []                                -> R 0
-  | (S n)::_                          -> S (n+1)
+  | (S n)::_                          -> env#allocate (n+2); S (n+1)
   | (R n)::_ when n < num_of_regs - 1 -> R (n+1)
-  | _                                 -> S 0
+  | _                                 -> env#allocate 1; S 0
 
 type x86instr =
   | X86Add  of opnd * opnd
@@ -112,7 +112,7 @@ type x86instr =
   | X86Call of string
   | X86Ret
 
-let x86compile code =
+let x86compile env code =
   let rec x86compile' stack code =
     match code with
     | [] -> []
@@ -124,13 +124,15 @@ let x86compile code =
          | S_WRITE ->
             ([X86Push (R 0); X86Call "write"; X86Pop (R 0)], [])
          | S_LD x ->
-            let s = allocate stack in
+            env#local x;
+            let s = allocate env stack in
             ([X86Mov (M x, s)], s::stack)
          | S_ST x ->
+            env#local x;
             let s::stack' = stack in
             ([X86Mov (s, M x)], stack')
          | S_PUSH n ->
-            let s = allocate stack in
+            let s = allocate env stack in
             ([X86Mov (L n, s)], s::stack)
          | S_ADD ->
             let x::y::stack'= stack in
@@ -143,6 +145,18 @@ let x86compile code =
   in
   x86compile' [] code
 
+module S = Set.Make (String)
+                    
+class env =
+  object
+    val stack_slots = ref 0
+    val locals = ref S.empty
+    method allocate n = stack_slots := max n !stack_slots
+    method local x = locals := S.add x !locals
+    method local_vars = S.elements !locals
+    method allocated = !stack_slots
+  end
+  
 let x86print instr =
   let opnd op =
     match op with
@@ -159,5 +173,21 @@ let x86print instr =
   | X86Pop  x -> Printf.sprintf "popl\t%s"  (opnd x)
   | X86Call f -> Printf.sprintf "call\t%s" f
   | X86Ret    -> "ret"
-                                     
+
+let genasm stmt =
+  let text = Buffer.create 1024 in
+  let out  = Buffer.add_string text in
+  let env  = new env in
+  let code = x86compile env (compile_stmt stmt) in
+  out "\t.text\n";
+  out "\t.globl\tmain\n";
+  List.iter
+    (fun x -> out (Printf.sprintf "\t.comm\t%s,\t%d,\t%d\n" x word_size word_size))
+    env#local_vars;
+  out "main:\n";
+  List.iter
+    (fun i -> out (Printf.sprintf "\t%s\n" (x86print i)))
+    code;
+  out "\tret\n";
+  Buffer.contents text
                                

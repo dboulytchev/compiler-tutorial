@@ -60,6 +60,6 @@ let _ =
   Printf.printf "%d\n" r
 
 let _ =
-  List.iter
-    (fun i -> Printf.printf "\t%s\n" (x86print i))
-    (x86compile (compile_stmt p))
+  let outf = open_out "sample1.s" in
+  Printf.fprintf outf "%s\n" (genasm p);
+  close_out outf
