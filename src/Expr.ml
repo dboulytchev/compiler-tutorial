@@ -166,9 +166,9 @@ let x86print instr =
     | L i -> Printf.sprintf "$%d" i
   in
   match instr with
-  | X86Add (x, y) -> Printf.sprintf "addl\t%s,\t%s" (opnd x) (opnd y)
+  | X86Add (x, y) -> Printf.sprintf "addl\t%s,\t%s"  (opnd x) (opnd y)
   | X86Mul (x, y) -> Printf.sprintf "imull\t%s,\t%s" (opnd x) (opnd y)
-  | X86Mov (x, y) -> Printf.sprintf "movl\t%s,\t%s" (opnd x) (opnd y)                                    
+  | X86Mov (x, y) -> Printf.sprintf "movl\t%s,\t%s"  (opnd x) (opnd y)
   | X86Push x -> Printf.sprintf "pushl\t%s" (opnd x)
   | X86Pop  x -> Printf.sprintf "popl\t%s"  (opnd x)
   | X86Call f -> Printf.sprintf "call\t%s" f
@@ -190,4 +190,9 @@ let genasm stmt =
     code;
   out "\tret\n";
   Buffer.contents text
-                               
+
+let build stmt name =
+  let outf = open_out (Printf.sprintf "%s.s" name) in
+  Printf.fprintf outf "%s" (genasm stmt);
+  close_out outf;
+  Sys.command (Printf.sprintf "gcc -m32 -o %s ../runtime/runtime.o %s.s" name name)

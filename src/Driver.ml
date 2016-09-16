@@ -7,6 +7,7 @@ read (x);
     write (z*z)
 *)
 
+(*
 let p =
   Seq (
       Read "x",
@@ -63,3 +64,15 @@ let _ =
   let outf = open_out "sample1.s" in
   Printf.fprintf outf "%s\n" (genasm p);
   close_out outf
+*)
+
+let main =
+  if Array.length Sys.argv <> 2
+  then Printf.printf "Usage: rc <input file.expr>\n"
+  else (
+    let infile   = Sys.argv.(1) in
+    let basename = Filename.chop_suffix infile ".expr" in
+    match Parser.parse infile with
+    | `Ok stmt -> ignore (Expr.build stmt basename)
+    | `Fail er -> Printf.eprintf "Syntac error: %s\n" er
+  )
