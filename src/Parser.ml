@@ -4,11 +4,15 @@ open Expr
 
 ostap (
   expr:
-    x:mulli "+" y:expr {Add (x, y)}
+    l:mulli suf:(("+"|"-") mulli)* {
+        List.fold_left (fun l (op, r) -> Binop (to_operator @@ Token.repr op, l, r)) l suf
+      }
   | mulli;
 
-  (* mulli: x:primary op:("*" | "/" | "%") y:mulli {Binop (Token.repr op, x, y)} *)
-  mulli: x:primary "*" y:mulli {Mul (x, y)}
+  mulli:
+    l:primary suf:("*" primary)* {
+        List.fold_left (fun l (op, r) -> Binop (to_operator @@ Token.repr op, l, r)) l suf
+      }
   | primary;
 
   primary:

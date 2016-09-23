@@ -1,15 +1,29 @@
+type operator =
+  | Plus
+  | Mult
+  | Minus
+
+let to_operator = function
+  | "+" -> Plus
+  | "*" -> Mult
+  | "-" -> Minus
+  | _ -> failwith "unknown operator"
+
 type expr =
   | Const of int
   | Var   of string
-  | Add   of expr * expr
-  | Mul   of expr * expr
+  | Binop of operator * expr * expr
+
+let to_fun = function
+  | Plus  -> (+)
+  | Mult  -> ( * )
+  | Minus -> (-)
 
 let rec eval (state : string -> int) expr =
   match expr with
   | Const n     -> n
   | Var   x     -> state x
-  | Add  (l, r) -> eval state l + eval state r
-  | Mul  (l, r) -> eval state l * eval state r
+  | Binop (op, l, r) -> (to_fun op) (eval state l) (eval state r)
 
 type stmt =
   | Skip
@@ -41,8 +55,7 @@ type instr =
   | S_PUSH  of int
   | S_LD    of string
   | S_ST    of string
-  | S_ADD
-  | S_MUL
+  | S_BINOP of operator
 
 let srun (input : int list) (code : instr list) =
   let rec srun' (state, stack, input, output) code =
@@ -64,12 +77,9 @@ let srun (input : int list) (code : instr list) =
           | S_ST x ->
              let y::stack' = stack in
              ((x, y)::state, stack', input, output)
-          | S_ADD ->
+          | S_BINOP op ->
              let x::y::stack' = stack in
-             (state, (y+x)::stack', input, output)
-          | S_MUL ->
-             let x::y::stack' = stack in
-             (state, (y*x)::stack', input, output)
+             (state, ((to_fun op) y x)::stack', input, output)
          )
          code'
   in
@@ -79,8 +89,7 @@ let rec compile_expr expr =
   match expr with
   | Const n     -> [S_PUSH n]
   | Var   x     -> [S_LD x]
-  | Add  (l, r) -> compile_expr l @ compile_expr r @ [S_ADD]
-  | Mul  (l, r) -> compile_expr l @ compile_expr r @ [S_MUL]
+  | Binop (op, l, r) -> compile_expr l @ compile_expr r @ [S_BINOP op]
 
 let rec compile_stmt stmt =
   match stmt with
@@ -105,12 +114,11 @@ let allocate env stack =
   | _                                 -> env#allocate 1; S 0
 
 type x86instr =
-  | X86Add  of opnd * opnd
-  | X86Mul  of opnd * opnd
-  | X86Mov  of opnd * opnd
-  | X86Push of opnd
-  | X86Pop  of opnd
-  | X86Call of string
+  | X86Binop of operator * opnd * opnd
+  | X86Mov   of opnd * opnd
+  | X86Push  of opnd
+  | X86Pop   of opnd
+  | X86Call  of string
   | X86Ret
 
 let x86compile env code =
@@ -135,23 +143,23 @@ let x86compile env code =
          | S_PUSH n ->
             let s = allocate env stack in
             ([X86Mov (L n, s)], s::stack)
-         | S_ADD ->
+         (* | S_ADD -> *)
+         (*    let x::y::stack'= stack in *)
+         (*    (match x, y with *)
+         (*     | S _, S _ -> *)
+         (*       [X86Mov (x, eax); *)
+         (*        X86Add (eax, y)], y::stack' *)
+         (*     | _ -> *)
+         (*       [X86Add (x, y)], y::stack') *)
+         | S_BINOP op ->
             let x::y::stack'= stack in
             (match x, y with
              | S _, S _ ->
-               [X86Mov (x, eax);
-                X86Add (eax, y)], y::stack'
+               [X86Mov       (y, eax);
+                X86Binop (op, x, eax);
+                X86Mov       (eax, y)], y::stack'
              | _ ->
-               [X86Add (x, y)], y::stack')
-         | S_MUL ->
-            let x::y::stack'= stack in
-            (match x, y with
-             | S _, S _ ->
-               [X86Mov (y, eax);
-                X86Mul (x, eax);
-                X86Mov (eax, y)], y::stack'
-             | _ ->
-               [X86Mul (x, y)], y::stack')
+               [X86Binop (op, x, y)], y::stack')
        in
        x86code @ x86compile' stack' code'
   in
@@ -170,6 +178,11 @@ class env =
   end
 
 let x86print instr =
+  let op_to_x86 = function
+    | Plus  -> "addl"
+    | Mult  -> "imull"
+    | Minus -> "subl"
+  in
   let opnd op =
     match op with
     | R i -> x86regs.(i)
@@ -178,13 +191,12 @@ let x86print instr =
     | L i -> Printf.sprintf "$%d" i
   in
   match instr with
-  | X86Add (x, y) -> Printf.sprintf "addl\t%s,\t%s"  (opnd x) (opnd y)
-  | X86Mul (x, y) -> Printf.sprintf "imull\t%s,\t%s" (opnd x) (opnd y)
-  | X86Mov (x, y) -> Printf.sprintf "movl\t%s,\t%s"  (opnd x) (opnd y)
-  | X86Push x -> Printf.sprintf "pushl\t%s" (opnd x)
-  | X86Pop  x -> Printf.sprintf "popl\t%s"  (opnd x)
-  | X86Call f -> Printf.sprintf "call\t%s" f
-  | X86Ret    -> "ret"
+  | X86Binop (op, x, y) -> Printf.sprintf "%s\t%s,\t%s" (op_to_x86 op) (opnd x) (opnd y)
+  | X86Mov       (x, y) -> Printf.sprintf "movl\t%s,\t%s"  (opnd x) (opnd y)
+  | X86Push           x -> Printf.sprintf "pushl\t%s" (opnd x)
+  | X86Pop            x -> Printf.sprintf "popl\t%s"  (opnd x)
+  | X86Call           f -> Printf.sprintf "call\t%s" f
+  | X86Ret              -> "ret"
 
 let genasm stmt =
   let text = Buffer.create 1024 in
