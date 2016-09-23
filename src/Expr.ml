@@ -10,7 +10,7 @@ let rec eval (state : string -> int) expr =
   | Var   x     -> state x
   | Add  (l, r) -> eval state l + eval state r
   | Mul  (l, r) -> eval state l * eval state r
-  
+
 type stmt =
   | Skip
   | Read   of string
@@ -73,7 +73,7 @@ let srun (input : int list) (code : instr list) =
          )
          code'
   in
-  srun' ([], [], input, []) code 
+  srun' ([], [], input, []) code
 
 let rec compile_expr expr =
   match expr with
@@ -89,18 +89,19 @@ let rec compile_stmt stmt =
   | Write   e     -> compile_expr e @ [S_WRITE]
   | Assign (x, e) -> compile_expr e @ [S_ST x]
   | Seq    (l, r) -> compile_stmt l @ compile_stmt r
-                                                       
-let x86regs = [|"%eax"; "%ebx"; "%ecx"; "%edx"; "%esi"; "%edi"|]
-let num_of_regs = Array.length x86regs
-let word_size = 4
 
 type opnd = R of int | S of int | M of string | L of int
+let x86regs = [|"%ebx"; "%ecx"; "%esi"; "%edi"; "%eax"; "%edx"|]
+let num_of_regs = Array.length x86regs
+let word_size = 4
+let eax = R 4
+let edx = R 5
 
 let allocate env stack =
   match stack with
   | []                                -> R 0
   | (S n)::_                          -> env#allocate (n+2); S (n+1)
-  | (R n)::_ when n < num_of_regs - 1 -> R (n+1)
+  | (R n)::_ when n < num_of_regs - 3 -> R (n+1)
   | _                                 -> env#allocate 1; S 0
 
 type x86instr =
@@ -120,7 +121,7 @@ let x86compile env code =
        let (x86code, stack') =
          match i with
          | S_READ ->
-            ([X86Call "read"], [R 0])
+            ([X86Call "read"], [eax])
          | S_WRITE ->
             ([X86Push (R 0); X86Call "write"; X86Pop (R 0)], [])
          | S_LD x ->
@@ -136,17 +137,28 @@ let x86compile env code =
             ([X86Mov (L n, s)], s::stack)
          | S_ADD ->
             let x::y::stack'= stack in
-            ([X86Add (x, y)], y::stack')
+            (match x, y with
+             | S _, S _ ->
+               [X86Mov (x, eax);
+                X86Add (eax, y)], y::stack'
+             | _ ->
+               [X86Add (x, y)], y::stack')
          | S_MUL ->
             let x::y::stack'= stack in
-            ([X86Mul (x, y)], y::stack')
+            (match x, y with
+             | S _, S _ ->
+               [X86Mov (y, eax);
+                X86Mul (x, eax);
+                X86Mov (eax, y)], y::stack'
+             | _ ->
+               [X86Mul (x, y)], y::stack')
        in
        x86code @ x86compile' stack' code'
   in
   x86compile' [] code
 
 module S = Set.Make (String)
-                    
+
 class env =
   object
     val stack_slots = ref 0
@@ -156,7 +168,7 @@ class env =
     method local_vars = S.elements !locals
     method allocated = !stack_slots
   end
-  
+
 let x86print instr =
   let opnd op =
     match op with
@@ -185,9 +197,26 @@ let genasm stmt =
     (fun x -> out (Printf.sprintf "\t.comm\t%s,\t%d,\t%d\n" x word_size word_size))
     env#local_vars;
   out "main:\n";
+  let prologue, epilogue =
+    if env#allocated = 0
+    then (fun () -> ()), (fun () -> ())
+    else
+      (fun () ->
+         out "\tpushl\t%ebp\n";
+         out "\tmovl\t%esp,\t%ebp\n";
+         out (Printf.sprintf "\tsubl\t$%d,\t%%esp\n" (env#allocated * word_size))
+      ),
+      (fun () ->
+         out "\tmovl\t%ebp,\t%esp\n";
+         out "\tpopl\t%ebp\n"
+      )
+  in
+  prologue ();
   List.iter
     (fun i -> out (Printf.sprintf "\t%s\n" (x86print i)))
     code;
+  epilogue();
+  out "\txorl\t%eax,\t%eax\n";
   out "\tret\n";
   Buffer.contents text
 
